@@ -1,0 +1,210 @@
+/*
+1.Remove duplicates
+2.Remove unwanted spaces
+3.Data normalization and standardization to gender and marital status (Map coded balues to user friendly description.)
+4.Handling Missing data (n/a for Null)
+5.Data filtering for null records in PK
+*/
+
+/*==========================================
+Check qaulity of crm_cust_info
+===========================================*/ 
+
+        ------------------------------------------------
+        -- #Quality Check 01 : Primary key must be unique and not null
+        ------------------------------------------------
+
+        Select
+        cst_id,
+        count(*)
+        from silver.crm_cust_info
+        group by cst_id
+        having count(*)>1 or cst_id is null;
+
+        --Fix: Rank the duplicate rows by creation date and get the latest one.
+        Select * 
+        from (
+        select *,
+        ROW_NUMBER() over (partition by cst_id order by cst_create_date desc) as flag_last
+        from silver.crm_cust_info
+        where cst_id is not null
+        ) t where flag_last=1;
+
+        ------------------------------------------------
+        -- #Quality Check 02 : Check for unwanted spaces in string values
+        ------------------------------------------------
+        select 
+        cst_firstname
+        from silver.crm_cust_info
+        where cst_firstname!=trim(cst_firstname);
+
+        -- Fix: Add trim () for every string value.
+
+        Select 
+               cst_id
+              ,cst_key
+              ,trim(cst_firstname) As cst_firstname
+              ,trim(cst_lastname) As cst_lastname
+              ,cst_marital_status
+              ,cst_gndr
+              ,cst_create_date
+
+        from (
+        select *,
+        ROW_NUMBER() over (partition by cst_id order by cst_create_date desc) as flag_last
+        from silver.crm_cust_info
+        where cst_id is not null
+        ) t where flag_last=1;
+
+        ------------------------------------------------
+        -- #Quality Check 03 : Check the consistency of values in low cardinality columns like Gender etc
+        ------------------------------------------------
+
+        -- In dwh, we aim to store clear and meaningful vvalues than abbreviated terms
+
+        select 
+        distinct cst_gndr
+        from silver.crm_cust_info;
+
+        -- Fix: 
+        Select 
+               cst_id
+              ,cst_key
+              ,TRIM(cst_firstname) As cst_firstname
+              ,TRIM(cst_lastname) As cst_lastname
+              ,CASE WHEN UPPER(TRIM(cst_marital_status))='S' Then 'Single'
+                     WHEN UPPER(TRIM(cst_marital_status))='M' Then 'Married' 
+                     ELSE 'n/a'
+                     END cst_marital_status
+              ,CASE WHEN UPPER(TRIM(cst_gndr))='F' Then 'Female'
+                     WHEN UPPER(TRIM(cst_gndr))='M' Then 'Male' 
+                     ELSE 'n/a'
+                     END cst_gndr
+              ,cst_create_date
+        from (
+        select *,
+        ROW_NUMBER() over (partition by cst_id order by cst_create_date desc) as flag_last
+        from silver.crm_cust_info
+        where cst_id is not null
+        ) t where flag_last=1;
+
+
+
+/*==========================================
+Check qaulity of crm_prod_info
+===========================================*/ 
+
+SELECT
+prd_id, -- derive 2 columns from prd_key - category_id to join woth erp_px_cat table , and prd_key
+REPLACE(SUBSTRING(prd_key,1,5),'-','_') As cat_id,
+SUBSTRING(prd_key,7,LEN(prd_key)) As prd_key,
+prd_nm,
+ISNULL(prd_cost,0) AS prd_cost,
+CASE UPPER(TRIM(prd_line))
+WHEN 'M' THEN 'Mountain'
+WHEN 'R' THEN 'Road'
+WHEN 'S' THEN 'Other Sales'
+WHEN 'T' THEN 'Touring'
+ELSE 'n/a' END AS prd_line,
+CAST(prd_start_dt AS DATE) AS prd_start_dt,
+DATEADD(DAY,-1,LEAD(prd_start_dt) over (partition by prd_key order by prd_start_dt)) as prd_end_dt              
+                          -- there shouldnt be overalapping between dates for same prd id
+                          -- Fix: Derive end date from start date (EndDate=start date of next record-1)
+FROM bronze.crm_prd_info ;
+
+/*==========================================
+Check qaulity of crm_sales_details
+===========================================
+-- Date columns: negative numbers cant be cast date, 
+                 replace 0 with NULL, 
+                 Length of each number should be 8
+                 check for outliers by validating the boundaries of the date range
+
+                - first convert number to varchar then to date
+                - check for invalid date orders (order date < ship date and order date < due date)
+
+   Sales = Quantity * price  (ALL 3 must not be negative, zeros, Null)
+
+            Fix:- If sales is negative, zero, or null, derive it using quantity and price
+                - If price is zero or null, calculate it using sales and quantity
+                - If price is negative, convert it to a positive value
+
+
+*/ 
+select 
+sls_ord_num,
+sls_prd_key,
+sls_cust_id,
+CASE WHEN sls_order_dt=0 or LEN(sls_order_dt)!=8 THEN NULL
+ELSE CAST(CAST(sls_order_dt AS VARCHAR) AS DATE) 
+END AS sls_order_dt,
+
+CASE WHEN sls_ship_dt=0 or LEN(sls_ship_dt)!=8 THEN NULL
+ELSE CAST(CAST(sls_ship_dt AS VARCHAR) AS DATE) 
+END AS sls_ship_dt,
+
+CASE WHEN sls_due_dt=0 or LEN(sls_due_dt)!=8 THEN NULL
+ELSE CAST(CAST(sls_due_dt AS VARCHAR) AS DATE) 
+END AS sls_due_dt,
+
+CASE WHEN sls_sales IS NULL OR sls_sales<=0 OR sls_sales!= sls_quantity* ABS(sls_price)
+     THEN sls_quantity * ABS(sls_price)
+     ELSE sls_sales
+     END AS sls_sales,
+
+sls_quantity,
+
+CASE WHEN sls_price IS NULL OR sls_price<=0 
+THEN sls_sales/ NULLIF(sls_quantity,0)
+ELSE sls_price
+END AS sls_price
+from bronze.crm_sales_details;
+
+
+/*==========================================
+Check qaulity of bronze.erp_cust_az12
+===========================================
+*/
+
+SELECT 
+CASE WHEN cid like 'NAS%' THEN SUBSTRING(cid,4,LEN(cid))  -- Remove NAS prefix
+     ELSE cid END cid,
+
+CASE WHEN bdate> GETDATE() THEN NULL  
+ELSE bdate END bdate,
+
+CASE WHEN UPPER(TRIM(gen)) IN ('F', 'FEMALE') THEN 'FEMALE'
+     WHEN UPPER(TRIM(gen)) IN ('M', 'MALE') THEN 'MALE'
+     ELSE 'n/a'
+     END gen  -- Normalize genDer values and handle unknown cases
+FROM bronze.erp_cust_az12;
+
+
+/*==========================================
+Check qaulity of bronze.erp_loc_a101
+===========================================
+*/
+SELECT 
+REPLACE(cid,'-','') AS cid,
+CASE WHEN TRIM(cntry)='DE' THEN 'GERMANY'
+     WHEN TRIM(cntry) IN ('US', 'USA') THEN 'United States'
+     WHEN TRIM(cntry)= '' OR cntry IS NULL THEN 'n/a' 
+     ELSE TRIM(cntry)
+     END AS cntry -- Normalize and handle missing or blank country codes
+FROM bronze.erp_loc_a101;
+
+
+
+
+
+/*==========================================
+Check qaulity of bronze.erp_px_cat_g1v2
+===========================================
+*/
+
+ SELECT 
+ id,
+ cat,
+ subcat,
+ maintenance
+ FROM bronze.erp_px_cat_g1v2;
