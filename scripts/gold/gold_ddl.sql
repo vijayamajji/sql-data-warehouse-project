@@ -17,6 +17,7 @@ Usage:
 -- =============================================================================
 -- Create Dimension: gold.dim_customers
 -- =============================================================================
+
 CREATE VIEW gold.dim_customers AS 
 SELECT 
     ROW_NUMBER() OVER (ORDER BY cst_id) AS customer_key,
@@ -38,6 +39,8 @@ LEFT JOIN silver.erp_loc_a101 la
 ON ci.cst_key=la.cid;
 
 SELECT * from gold.dim_customers;
+
+-- Steps:
 -- check for duplicate records
 -- data integration: we have gender from 2 colomns - use distinct to find combination - need to know master source
 -- rename columns to friendly, meaningful names
@@ -68,6 +71,7 @@ LEFT JOIN silver.erp_px_cat_g1v2 pc
 ON pn.cat_id=pc.ID
 WHERE pn.prd_end_dt	IS NULL; -- Filter out all historical data
 
+-- Steps:
 -- filter for only current data, ignore historical data
 -- check for duplicate records
 -- data integration: we have gender from 2 colomns - use distinct to find combination - need to know master source
@@ -97,6 +101,8 @@ LEFT JOIN gold.dim_customers cu
 ON sd.sls_cust_id= cu.customer_id;
 
 Select * from gold.fact_sales;
+
+-- Steps:
 -- join two dimensions with existing keys in the fact
    -- * Use the dimensions's surrogate keys instead of IDs to easily connect facts with dimensions
 -- adding surrogatekeys from dimension in fact by joining sivler layer fact with gold layer dimensions as we have surrogates key are in gold layer only
