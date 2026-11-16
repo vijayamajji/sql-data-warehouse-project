@@ -1,5 +1,20 @@
 # Data Warehouse and Analytics Project
 
+```
+sql-data-warehouse-project/
+├── 00_setup/               the setup guide, and the one-click Docker start for Mac
+├── 01_datasets/            the six source files the project loads
+│   ├── source_crm/         three files from the CRM system
+│   └── source_erp/         three files from the ERP system
+├── 02_docs/                the requirements, the diagrams and the notes
+├── 03_scripts/             the project scripts, in the order of the videos
+│   ├── init_database.sql   creates the database: run it first
+│   ├── bronze/             loads the raw files
+│   ├── silver/             cleans and prepares the data
+│   └── gold/               builds the tables for analysis
+└── 04_tests/               checks the quality of the silver and gold data
+```
+
 ## 🏗️ Data Architecture
 
 The data architecture for this project follows Medallion Architecture **Bronze**, **Silver**, and **Gold** layers:
@@ -46,8 +61,13 @@ Develop SQL-based analytics to deliver detailed insights into:
 - **Sales Trends**
 
 These insights empower stakeholders with key business metrics, enabling strategic decision-making.  
-
 ---
+
+## 🏆 Original Project
+
+[![Built with Data With Baraa](https://img.shields.io/badge/Built_with-Data_With_Baraa-F5B301?style=for-the-badge)](https://github.com/DataWithBaraa/sql-data-warehouse-project)
+
+
 ## 🤝 Connect
 
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?style=for-the-badge)](https://www.linkedin.com/in/vijayamajji/)
